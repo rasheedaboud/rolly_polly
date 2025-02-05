@@ -1,0 +1,18 @@
+[package]
+name = "rolly_polly"
+version = "0.1.0"
+edition = "2021"
+
+# Enable a small amount of optimization in the dev profile.
+[profile.dev]
+opt-level = 1
+
+# Enable a large amount of optimization in the dev profile for dependencies.
+[profile.dev.package."*"]
+opt-level = 3
+
+[dependencies]
+bevy = "0.15.1"
+bevy_audio_controller =  {version = "0.3.0", features = ["all-codecs"] }
+bevy_rapier2d = "0.28.0"
+rand = "0.9.0"
