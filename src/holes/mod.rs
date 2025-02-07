@@ -1,13 +1,12 @@
 use bevy::{
     audio::{PlaybackMode, Volume},
     prelude::*,
-    render::view::RenderLayers,
 };
 use bevy_audio_controller::prelude::{AudioFiles, GlobalPlayEvent};
 use bevy_rapier2d::prelude::*;
 
 use crate::{
-    player::{self, Missile, Player},
+    player::{Missile, Player},
     star::Star,
     GameState,
 };
@@ -25,9 +24,7 @@ impl Default for Hole {
 }
 
 #[derive(Component)]
-struct HoleDirection {
-    direction: Vec3,
-}
+struct HoleDirection;
 
 // Systems --------------------------------------------------------------------
 fn cleanup_holes(mut commands: Commands, holes: Query<Entity, With<Hole>>) {
@@ -101,15 +98,14 @@ fn spawn_hole(
             return;
         }
 
-        let angle = rand::random::<f32>() * std::f32::consts::TAU;
-        let dir = Vec3::new(angle.cos(), angle.sin(), 0.0);
         commands.spawn((
             Sprite::from_image(model),
             Hole::default(),
             RigidBody::Fixed,
+            Collider::ball(HOLE_RADIUS),
             Transform::from_translation(Vec3::new(spawn_position.x, spawn_position.y, 1.0)),
-            HoleDirection { direction: dir },
-            RenderLayers::layer(1),
+            HoleDirection,
+            Sensor,
         ));
     }
 }
@@ -154,7 +150,7 @@ fn move_holes(
     time: Res<Time>,
     windows: Query<&Window>,
     stars: Query<&Transform, (With<Star>, Without<Hole>, Without<Player>)>,
-    mut holes: Query<(Entity, &mut Transform, &Hole), With<Hole>>,
+    mut holes: Query<(&mut Transform, &Hole), With<Hole>>,
     players: Query<(Entity, &mut Transform), (With<Player>, Without<Hole>, Without<Star>)>,
 ) {
     let window = windows.single();
@@ -167,7 +163,7 @@ fn move_holes(
     // Speed at which holes move.
 
     if stars.iter().count() == 0 {
-        for (entity, mut transform, hole) in holes.iter_mut() {
+        for (mut transform, hole) in holes.iter_mut() {
             let hole_pos = transform.translation;
             let mut nearest_star: Option<Vec3> = None;
             let mut min_distance = f32::MAX;
@@ -199,18 +195,12 @@ fn move_holes(
                 );
                 let final_target = Vec3::new(clamped_x, clamped_y, target.z);
 
-                println!(
-                    "Moving hole {:?}, towards player at {:?}, dest: {}",
-                    entity.index(),
-                    target_star,
-                    final_target
-                );
                 transform.translation = final_target;
             }
         }
     }
 
-    for (entity, mut transform, hole) in holes.iter_mut() {
+    for (mut transform, hole) in holes.iter_mut() {
         let hole_pos = transform.translation;
         let mut nearest_star: Option<Vec3> = None;
         let mut min_distance = f32::MAX;
@@ -242,12 +232,6 @@ fn move_holes(
             );
             let final_target = Vec3::new(clamped_x, clamped_y, target.z);
 
-            println!(
-                "Moving hole {:?}, towards star at {:?}, dest: {}",
-                entity.index(),
-                target_star,
-                final_target
-            );
             transform.translation = final_target;
         }
     }

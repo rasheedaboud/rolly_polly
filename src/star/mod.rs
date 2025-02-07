@@ -1,4 +1,4 @@
-use bevy::{prelude::*, render::view::RenderLayers};
+use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
 
 use crate::GameState;
@@ -86,11 +86,16 @@ fn spawn_star(
             Star,
             RigidBody::Fixed,
             Transform::from_translation(Vec3::new(spawn_position.x, spawn_position.y, 1.0)),
-            RenderLayers::layer(1),
         ));
     }
 }
 
+fn start_pulse(time: Res<Time>, mut query: Query<&mut Transform, With<Star>>) {
+    for mut transform in query.iter_mut() {
+        let scale = 1.0 + (time.elapsed_secs() * 2.0).sin() * 0.1;
+        transform.scale = Vec3::splat(scale);
+    }
+}
 // PLUGIN -------------------------------------
 pub struct StarPlugin;
 
@@ -99,7 +104,9 @@ impl Plugin for StarPlugin {
         app.add_systems(OnEnter(GameState::Start), despawn_stars)
             .add_systems(
                 FixedUpdate,
-                (spawn_star).chain().run_if(in_state(GameState::Playing)),
+                (spawn_star, start_pulse)
+                    .chain()
+                    .run_if(in_state(GameState::Playing)),
             );
     }
 }

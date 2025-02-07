@@ -5,13 +5,10 @@ mod star;
 
 use audio::*;
 use bevy::{
-    audio::PlaybackSettings,
-    log::tracing_subscriber::fmt::Layer,
-    prelude::*,
-    render::{render_resource::Texture, texture::DepthAttachment, view::RenderLayers},
+    audio::PlaybackSettings, color::palettes::css::DARK_GREY, prelude::*, sprite::AlphaMode2d,
 };
 use bevy_audio_controller::prelude::*;
-use bevy_rapier2d::{na::Scale, prelude::*};
+use bevy_rapier2d::prelude::*;
 use holes::*;
 use player::*;
 use star::*;
@@ -116,15 +113,61 @@ fn setup_game(
     window: Query<&Window>,
     mut next_state: ResMut<NextState<GameState>>,
     health: Query<Entity, With<Health>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
     let window = window.single();
-    let mut bg = Sprite::from_image(asset_server.load("space.png"));
-    bg.custom_size = Some(Vec2::new(window.width(), window.height()));
+    let texture_handle = asset_server.load("space.png");
+    let mesh_handle = meshes.add(Rectangle::from_size(Vec2::new(
+        window.width(),
+        window.height(),
+    )));
 
+    let half_width = window.width() / 2.0;
+    let half_height = window.height() / 2.0;
+    let thickness = 10.0; // thickness for the boundaries
+
+    // Top boundary
     commands.spawn((
-        bg,
-        Transform::from_translation(Vec3::new(0., -50., -1.)),
-        RenderLayers::layer(0),
+        Transform::from_xyz(0.0, (half_height - 40.) + thickness / 2.0, 0.0),
+        GlobalTransform::default(),
+        RigidBody::Fixed,
+        Collider::cuboid(half_width, thickness / 2.0),
+    ));
+
+    // Bottom boundary
+    commands.spawn((
+        Transform::from_xyz(0.0, -half_height - thickness / 2.0, 0.0),
+        GlobalTransform::default(),
+        RigidBody::Fixed,
+        Collider::cuboid(half_width, thickness / 2.0),
+    ));
+
+    // Left boundary
+    commands.spawn((
+        Transform::from_xyz(-half_width - thickness / 2.0, 0.0, 0.0),
+        GlobalTransform::default(),
+        RigidBody::Fixed,
+        Collider::cuboid(thickness / 2.0, half_height),
+    ));
+
+    // Right boundary
+    commands.spawn((
+        Transform::from_xyz(half_width + thickness / 2.0, 0.0, 0.0),
+        GlobalTransform::default(),
+        RigidBody::Fixed,
+        Collider::cuboid(thickness / 2.0, half_height),
+    ));
+
+    // Background
+    commands.spawn((
+        Mesh2d(mesh_handle.clone()),
+        MeshMaterial2d(materials.add(ColorMaterial {
+            color: DARK_GREY.into(),
+            alpha_mode: AlphaMode2d::Mask(0.9),
+            texture: Some(texture_handle.clone()),
+        })),
+        Transform::from_translation(Vec3::new(0., -50., -1.0)),
     ));
 
     for health in health.iter() {

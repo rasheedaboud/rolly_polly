@@ -1,4 +1,4 @@
-use bevy::{prelude::*, render::view::RenderLayers};
+use bevy::prelude::*;
 use bevy_audio_controller::prelude::{AudioFiles, GlobalPlayEvent};
 use bevy_rapier2d::prelude::*;
 
@@ -17,7 +17,7 @@ pub struct PlayerAddLife;
 pub struct PlayerAddMissiles;
 
 /// COMPONENTS -------------------------------------
-#[derive(Component)]
+#[derive(Component, Copy, Clone)]
 pub struct Player {
     pub life: i8,
     pub stars: u32,
@@ -45,48 +45,10 @@ fn setup_player(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     player: Query<Entity, With<Player>>,
-    windows: Query<&Window>,
 ) {
     for player in player.iter() {
         commands.entity(player).despawn_recursive();
     }
-
-    let window = windows.single();
-    let half_width = window.width() / 2.0;
-    let half_height = window.height() / 2.0;
-    let thickness = 10.0; // thickness for the boundaries
-
-    // Top boundary
-    commands.spawn((
-        Transform::from_xyz(0.0, (half_height - 40.) + thickness / 2.0, 0.0),
-        GlobalTransform::default(),
-        RigidBody::Fixed,
-        Collider::cuboid(half_width, thickness / 2.0),
-    ));
-
-    // Bottom boundary
-    commands.spawn((
-        Transform::from_xyz(0.0, -half_height - thickness / 2.0, 0.0),
-        GlobalTransform::default(),
-        RigidBody::Fixed,
-        Collider::cuboid(half_width, thickness / 2.0),
-    ));
-
-    // Left boundary
-    commands.spawn((
-        Transform::from_xyz(-half_width - thickness / 2.0, 0.0, 0.0),
-        GlobalTransform::default(),
-        RigidBody::Fixed,
-        Collider::cuboid(thickness / 2.0, half_height),
-    ));
-
-    // Right boundary
-    commands.spawn((
-        Transform::from_xyz(half_width + thickness / 2.0, 0.0, 0.0),
-        GlobalTransform::default(),
-        RigidBody::Fixed,
-        Collider::cuboid(thickness / 2.0, half_height),
-    ));
 
     commands.spawn((
         Sprite::from_image(asset_server.load("ball_blue_large.png")),
@@ -96,46 +58,39 @@ fn setup_player(
         Collider::ball(32.0),
         GravityScale(0.),
         Velocity::zero(),
-        RenderLayers::layer(0),
     ));
 }
 
 fn gamepad_movement(
     gamepads: Query<&Gamepad>,
-    mut query: Query<(&mut Velocity, &Player), With<Player>>,
+    mut query: Query<(&mut Velocity, &Player, &mut Transform), With<Player>>,
     time: Res<Time>,
 ) {
-    for (mut velocity, player) in query.iter_mut() {
+    for (mut velocity, player, mut transform) in query.iter_mut() {
         for gamepad in &gamepads {
             let speed = player.speed;
-
             let mut direction = Vec2::ZERO;
-            if gamepad.just_pressed(GamepadButton::DPadUp) {
-                direction.x = 1.0;
-            }
-            if gamepad.just_pressed(GamepadButton::DPadDown) {
-                direction.x = -1.0;
-            }
-            if gamepad.just_pressed(GamepadButton::DPadLeft) {
-                direction.y = -1.0;
-            }
-            if gamepad.just_pressed(GamepadButton::DPadRight) {
-                direction.y = 1.0;
+
+            // Get stick input
+            if let (Some(left_stick_x), Some(left_stick_y)) = (
+                gamepad.get(GamepadAxis::LeftStickX),
+                gamepad.get(GamepadAxis::LeftStickY),
+            ) {
+                direction = Vec2::new(left_stick_x, left_stick_y);
+
+                // Only rotate if stick has significant movement
+                if direction.length() > 0.1 {
+                    let angle = direction.y.atan2(direction.x) - std::f32::consts::FRAC_PI_2;
+                    transform.rotation = Quat::from_rotation_z(angle);
+                }
             }
 
-            if let Some(left_stick_x) = gamepad.get(GamepadAxis::LeftStickX) {
-                direction.x = left_stick_x;
-            }
-            if let Some(left_stick_y) = gamepad.get(GamepadAxis::LeftStickY) {
-                direction.y = left_stick_y;
-            }
-
-            // Normalize so diagonal movement isn’t faster.
+            // Normalize direction for movement
             if direction != Vec2::ZERO {
                 direction = direction.normalize();
             }
 
-            // Option 2: Smoothly interpolate toward the desired velocity (for gradual acceleration)
+            // Apply movement
             let target_velocity = direction * speed;
             let acceleration = 5.0;
             velocity.linvel = velocity
@@ -147,56 +102,58 @@ fn gamepad_movement(
 
 fn fire_missile(
     gamepads: Query<&Gamepad>,
-    mut query: Query<(&mut Transform, &mut Player), With<Player>>,
+    query: Single<(&mut Transform, &mut Player), With<Player>>,
     asset_server: Res<AssetServer>,
     mut commands: Commands,
     mut sfx_play_ew: EventWriter<GlobalPlayEvent>,
 ) {
     for gamepad in &gamepads {
-        if gamepad.just_pressed(GamepadButton::East) {
-            for (transform, mut player) in query.iter_mut() {
-                // Determine missile firing parameters.
-                // Use the player's current rotation to compute the firing direction.
-                let missile_speed = 1000.0;
+        let transform = &query.0;
+        let mut player = *query.1;
+        // Determine missile firing parameters.
+        // Use the player's current rotation to compute the firing direction.
+        let missile_speed = 1000.0;
 
-                let mut fire_direction = Vec2::ZERO;
-                if let (Some(stick_x), Some(stick_y)) = (
-                    gamepad.get(GamepadAxis::LeftStickX),
-                    gamepad.get(GamepadAxis::LeftStickY),
-                ) {
-                    let stick_direction = Vec2::new(stick_x, stick_y);
-                    if stick_direction.length() > 0.1 {
-                        fire_direction = stick_direction.normalize();
-                    }
-                }
+        // default fire direction to player direction from transform
+        let forward = transform.rotation * Vec3::Y;
+        let mut fire_direction = Vec2::new(forward.x, forward.y);
 
-                if fire_direction != Vec2::ZERO && player.missiles > 0.0 {
-                    // Offset the spawn position slightly so the missile doesn't overlap the player.
-                    let spawn_position =
-                        transform.translation + (fire_direction.extend(0.0) * 50.0);
-                    let angle =
-                        fire_direction.y.atan2(fire_direction.x) - std::f32::consts::FRAC_PI_2;
-                    commands.spawn((
-                        Sprite::from_image(asset_server.load("ball_red_small.png")),
-                        Transform {
-                            translation: spawn_position,
-                            rotation: Quat::from_rotation_z(angle),
-                            ..Default::default()
-                        },
-                        RigidBody::Dynamic,
-                        GravityScale(0.),
-                        Velocity {
-                            linvel: fire_direction * missile_speed,
-                            angvel: 0.0,
-                        },
-                        Missile,
-                    ));
-                    player.missiles -= 1.0;
-                    let event = GlobalPlayEvent::new(AudioFiles::PopOGG)
-                        .with_settings(PlaybackSettings::ONCE);
-                    sfx_play_ew.send(event);
-                }
+        if let (Some(stick_x), Some(stick_y)) = (
+            gamepad.get(GamepadAxis::LeftStickX),
+            gamepad.get(GamepadAxis::LeftStickY),
+        ) {
+            let stick_direction = Vec2::new(stick_x, stick_y);
+            if stick_direction.length() > 0.1 {
+                fire_direction = stick_direction.normalize();
             }
+        }
+
+        if fire_direction != Vec2::ZERO
+            && player.missiles > 0.0
+            && gamepad.just_pressed(GamepadButton::South)
+        {
+            // Offset the spawn position slightly so the missile doesn't overlap the player.
+            let spawn_position = transform.translation + (fire_direction.extend(0.0) * 50.0);
+            let angle = fire_direction.y.atan2(fire_direction.x) - std::f32::consts::FRAC_PI_2;
+            commands.spawn((
+                Sprite::from_image(asset_server.load("ball_red_small.png")),
+                Transform {
+                    translation: spawn_position,
+                    rotation: Quat::from_rotation_z(angle),
+                    ..Default::default()
+                },
+                RigidBody::Dynamic,
+                GravityScale(0.),
+                Velocity {
+                    linvel: fire_direction * missile_speed,
+                    angvel: 0.0,
+                },
+                Missile,
+            ));
+            player.missiles -= 1.0;
+            let event =
+                GlobalPlayEvent::new(AudioFiles::PopOGG).with_settings(PlaybackSettings::ONCE);
+            sfx_play_ew.send(event);
         }
     }
 }
