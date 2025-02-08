@@ -100,8 +100,51 @@ fn gamepad_movement(
     }
 }
 
+fn fire_missile_keyboard(
+    keys: Res<ButtonInput<KeyCode>>,
+    query: Single<(&mut Transform, &mut Player), With<Player>>,
+    asset_server: Res<AssetServer>,
+    mut commands: Commands,
+    mut sfx_play_ew: EventWriter<GlobalPlayEvent>,
+) {
+    let transform = &query.0;
+    let mut player = *query.1;
+    // Determine missile firing parameters.
+    // Use the player's current rotation to compute the firing direction.
+    let missile_speed = 1000.0;
+
+    // default fire direction to player direction from transform
+    let forward = transform.rotation * Vec3::Y;
+    let fire_direction = Vec2::new(forward.x, forward.y);
+
+    if fire_direction != Vec2::ZERO && player.missiles > 0.0 && keys.just_pressed(KeyCode::Space) {
+        // Offset the spawn position slightly so the missile doesn't overlap the player.
+        let spawn_position = transform.translation + (fire_direction.extend(0.0) * 50.0);
+        let angle = fire_direction.y.atan2(fire_direction.x) - std::f32::consts::FRAC_PI_2;
+        commands.spawn((
+            Sprite::from_image(asset_server.load("ball_red_small.png")),
+            Transform {
+                translation: spawn_position,
+                rotation: Quat::from_rotation_z(angle),
+                ..Default::default()
+            },
+            RigidBody::Dynamic,
+            GravityScale(0.),
+            Velocity {
+                linvel: fire_direction * missile_speed,
+                angvel: 0.0,
+            },
+            Missile,
+        ));
+        player.missiles -= 1.0;
+        let event = GlobalPlayEvent::new(AudioFiles::PopOGG).with_settings(PlaybackSettings::ONCE);
+        sfx_play_ew.send(event);
+    }
+}
+
 fn fire_missile(
     gamepads: Query<&Gamepad>,
+    keys: Res<ButtonInput<KeyCode>>,
     query: Single<(&mut Transform, &mut Player), With<Player>>,
     asset_server: Res<AssetServer>,
     mut commands: Commands,
@@ -130,7 +173,7 @@ fn fire_missile(
 
         if fire_direction != Vec2::ZERO
             && player.missiles > 0.0
-            && gamepad.just_pressed(GamepadButton::South)
+            && (gamepad.just_pressed(GamepadButton::South) || keys.just_pressed(KeyCode::Space))
         {
             // Offset the spawn position slightly so the missile doesn't overlap the player.
             let spawn_position = transform.translation + (fire_direction.extend(0.0) * 50.0);
@@ -159,11 +202,11 @@ fn fire_missile(
 }
 
 fn player_movement(
-    mut query: Query<(&mut Velocity, &Player), With<Player>>,
+    mut query: Query<(&mut Velocity, &Player, &mut Transform), With<Player>>,
     keys: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
 ) {
-    for (mut velocity, player) in query.iter_mut() {
+    for (mut velocity, player, mut transform) in query.iter_mut() {
         let speed = player.speed;
 
         let mut direction = Vec2::ZERO;
@@ -182,6 +225,8 @@ fn player_movement(
         // Normalize so diagonal movement isn’t faster.
         if direction != Vec2::ZERO {
             direction = direction.normalize();
+            let angle = direction.y.atan2(direction.x) - std::f32::consts::FRAC_PI_2;
+            transform.rotation = Quat::from_rotation_z(angle);
         }
 
         // Option 2: Smoothly interpolate toward the desired velocity (for gradual acceleration)
@@ -243,6 +288,7 @@ fn handle_star_collection(
                 GlobalPlayEvent::new(AudioFiles::PowerUp2OGG).with_settings(PlaybackSettings::ONCE);
             sfx_play_ew.send(event);
             if player.stars % 10 == 0 {
+                player.speed = player.speed * 1.1;
                 life_event.send(PlayerAddLife);
                 missile_event.send(PlayerAddMissiles);
             }
@@ -361,6 +407,7 @@ impl Plugin for PlayerPlugin {
                 FixedUpdate,
                 (
                     gamepad_movement,
+                    fire_missile_keyboard,
                     fire_missile,
                     player_movement,
                     handle_star_collection,

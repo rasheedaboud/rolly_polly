@@ -5,7 +5,8 @@ mod star;
 
 use audio::*;
 use bevy::{
-    audio::PlaybackSettings, color::palettes::css::DARK_GREY, prelude::*, sprite::AlphaMode2d,
+    asset::AssetMetaCheck, audio::PlaybackSettings, color::palettes::css::DARK_GREY, prelude::*,
+    sprite::AlphaMode2d,
 };
 use bevy_audio_controller::prelude::*;
 use bevy_rapier2d::prelude::*;
@@ -60,7 +61,8 @@ const PRESSED_BUTTON: Color = Color::srgb(0.35, 0.75, 0.35);
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(AssetPlugin {
-            ..Default::default()
+            meta_check: AssetMetaCheck::Never,
+            ..AssetPlugin::default()
         }))
         .add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0))
         .add_plugins(RapierDebugRenderPlugin::default())
@@ -97,13 +99,17 @@ fn main() {
         .run();
 }
 
-fn setup(mut commands: Commands, mut next_state: ResMut<NextState<GameState>>) {
+fn setup(
+    mut commands: Commands,
+    mut next_state: ResMut<NextState<GameState>>,
+    asset_server: Res<AssetServer>,
+) {
     commands.insert_resource(GameState::Start);
     commands.insert_resource(GameState::GameOver);
     commands.insert_resource(GameState::Paused);
     commands.insert_resource(GameState::Playing);
     commands.spawn(Camera2d::default());
-    start_menu(&mut commands);
+    start_menu(&mut commands, asset_server);
     next_state.set(GameState::Paused);
 }
 
@@ -210,66 +216,50 @@ fn spawn_score_text(mut commands: Commands) {
     ));
 }
 
-fn start_menu(commands: &mut Commands) {
+fn start_menu(commands: &mut Commands, asset_server: Res<AssetServer>) {
     commands
         .spawn((
             Node {
                 position_type: PositionType::Relative,
-                display: Display::Grid,
-                grid_template_rows: RepeatedGridTrack::auto(2), // 2 auto rows
-                row_gap: Val::Px(4.),
-                margin: UiRect {
-                    left: Val::Auto,
-                    right: Val::Auto,
-                    top: Val::Auto,
-                    bottom: Val::Auto,
-                },
-                padding: UiRect::all(Val::Px(10.0)),
-                width: Val::Percent(30.0),
-                height: Val::Percent(30.0),
-                justify_content: JustifyContent::Center,
+                display: Display::Flex,
+                flex_direction: FlexDirection::Column,
                 align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
                 ..default()
             },
-            BackgroundColor(Color::hsla(1., 1., 1., 0.8)),
             MainMenu,
         ))
         .with_children(|parent| {
-            // First row - Quit Game button
+            // Image
             parent
-                .spawn((
-                    Button,
-                    Node {
-                        width: Val::Auto,
-                        height: Val::Auto,
-                        padding: UiRect::all(Val::Px(10.0)),
-                        border: UiRect::all(Val::Px(5.0)),
-                        justify_content: JustifyContent::Center,
-                        align_items: AlignItems::Center,
-                        ..default()
-                    },
-                    BorderColor(Color::BLACK),
-                    BorderRadius::MAX,
-                    BackgroundColor(NORMAL_BUTTON),
-                ))
+                .spawn((Node {
+                    width: Val::Auto,
+                    height: Val::Auto,
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    margin: UiRect::bottom(Val::Px(5.0)), // Add some space below the image
+                    ..default()
+                },))
                 .with_child((
-                    Text::new("Quit Game"),
-                    TextFont {
-                        font_size: 33.0,
-                        ..default()
+                    ImageNode {
+                        image: asset_server.load("title.png"),
+                        ..ImageNode::default()
                     },
-                    TextColor(Color::srgb(0.9, 0.9, 0.9)),
+                    Transform::from_scale(Vec3::splat(0.7)), // Scale down the image
                 ));
 
-            // Second row - Start Over button
+            // Start Game Button
             parent
                 .spawn((
                     Button,
                     Node {
                         width: Val::Auto,
                         height: Val::Auto,
-                        padding: UiRect::all(Val::Px(10.0)),
+                        padding: UiRect::all(Val::Px(10.)),
                         border: UiRect::all(Val::Px(5.0)),
+                        margin: UiRect::bottom(Val::Px(5.0)),
                         justify_content: JustifyContent::Center,
                         align_items: AlignItems::Center,
                         ..default()
@@ -281,6 +271,33 @@ fn start_menu(commands: &mut Commands) {
                 ))
                 .with_child((
                     Text::new("Start Game"),
+                    TextFont {
+                        font_size: 33.0,
+                        ..default()
+                    },
+                    TextColor(Color::srgb(0.9, 0.9, 0.9)),
+                ));
+
+            // Quit Game Button
+            parent
+                .spawn((
+                    Button,
+                    Node {
+                        width: Val::Auto,
+                        height: Val::Auto,
+                        padding: UiRect::all(Val::Px(10.)),
+                        border: UiRect::all(Val::Px(5.0)),
+                        margin: UiRect::bottom(Val::Px(5.0)),
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
+                        ..default()
+                    },
+                    BorderColor(Color::BLACK),
+                    BorderRadius::MAX,
+                    BackgroundColor(NORMAL_BUTTON),
+                ))
+                .with_child((
+                    Text::new("Quit Game"),
                     TextFont {
                         font_size: 33.0,
                         ..default()
